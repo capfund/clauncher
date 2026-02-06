@@ -53,10 +53,10 @@ class MinecraftLauncher(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, fg_color=("white", "#2b2b2b"))
         self.main_frame.pack(fill="both", expand=True, padx=40, pady=40)
 
-        pil_image = Image.open("clbg.jpg")
+        self.pil_image = Image.open("clbg.jpg")
 
         # Create CTkImage (enable scaling)
-        self.bg_image = CTkImage(light_image=pil_image, dark_image=pil_image, size=(600, 400))
+        self.bg_image = CTkImage(light_image=self.pil_image, dark_image=self.pil_image, size=(self.winfo_width(), self.winfo_height()))
 
         # Background label
         self.bg_label = CTkLabel(master=self, image=self.bg_image, text="")
@@ -174,6 +174,10 @@ class MinecraftLauncher(ctk.CTk):
         )
         self.logs_text.pack(fill="both", expand=True, padx=5, pady=5)
 
+        self._resize_job = None
+
+        self.bind("<Configure>", self.on_resize)
+
         # Status bar
         self.status_bar = ctk.CTkFrame(self.main_frame, fg_color="transparent", height=25)
         self.status_bar.pack(fill="x", padx=10, pady=(0,5))
@@ -185,6 +189,15 @@ class MinecraftLauncher(ctk.CTk):
             text_color="gray"
         )
         self.status_label.pack(side="left")
+
+    def on_resize(self, event):
+        if self._resize_job is not None:
+            self.after_cancel(self._resize_job)
+        self._resize_job = self.after(100, lambda: self.resize_bg(event.width, event.height))
+
+    def resize_bg(self, width, height):
+        self.bg_image = CTkImage(light_image=self.pil_image, dark_image=self.pil_image, size=(width, height))
+        self.bg_label.configure(image=self.bg_image)
 
     def is_trusted_url(self, url, trusted_domains):
         """Check if the URL belongs to a trusted domain."""
@@ -304,7 +317,7 @@ class MinecraftLauncher(ctk.CTk):
 
         if not os.path.exists(jar_path):
             with open(jar_path, "wb") as file:
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=65536):
                     size += len(chunk)
                     if size > max_size:
                         raise ValueError("File exceeds maximum allowed size.")
@@ -334,7 +347,7 @@ class MinecraftLauncher(ctk.CTk):
 
                         response = requests.get(url, stream=True)
                         with open(lib_path, "wb") as file:
-                            for chunk in response.iter_content(chunk_size=8192):
+                            for chunk in response.iter_content(chunk_size=65536):
                                 file.write(chunk)
 
                         if expected_hash and not self.verify_file_hash(lib_path, expected_hash):
@@ -354,7 +367,7 @@ class MinecraftLauncher(ctk.CTk):
 
                                 response = requests.get(url, stream=True)
                                 with open(native_path, "wb") as file:
-                                    for chunk in response.iter_content(chunk_size=8192):
+                                    for chunk in response.iter_content(chunk_size=65536):
                                         file.write(chunk)
 
                             if expected_hash and not self.verify_file_hash(native_path, expected_hash):
@@ -400,7 +413,7 @@ class MinecraftLauncher(ctk.CTk):
                 response = requests.get(f"https://resources.download.minecraft.net/{sub_dir}/{hash}", stream=True)
                 print("Writing asset:", asset_path)
                 with open(asset_path, "wb") as file:
-                    for chunk in response.iter_content(chunk_size=8192):
+                    for chunk in response.iter_content(chunk_size=65536):
                         file.write(chunk)
 
                 if not self.verify_file_hash(asset_path, hash, "sha1"):  # Mojang provides SHA-1 for assets
@@ -509,7 +522,7 @@ class MinecraftLauncher(ctk.CTk):
                     self.icon_image = ImageTk.PhotoImage(Image.open("grassblock.jpg").resize((24, 24)))
                 else:
                     self.icon_image = ImageTk.PhotoImage(Image.open("furnace.jpeg").resize((24, 24)))
-                self.icon_label.configure(image=self.icon_image)
+                #self.icon_label.configure(image=self.icon_image)
 
     def add_installation(self):
         profile_name = simpledialog.askstring("Profile Name", "Enter profile name:")
