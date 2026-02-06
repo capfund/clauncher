@@ -15,6 +15,9 @@ import ssl
 import socket
 from hashlib import sha256
 from concurrent.futures import ThreadPoolExecutor
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from queue import Queue
 
 # Get the directory of the current script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,6 +43,22 @@ os.makedirs(ASSETS_DIR, exist_ok=True)
 class MinecraftLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
+        
+        # Create a requests session with connection pooling and retries
+        self.session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
+        # Queue for thread-safe log messages
+        self.log_queue = Queue()
+        
         self.latest_release = self.fetch_latest_version()
         self.title("CLauncher")
         self.geometry("550x550")  # Increased height to 700px
@@ -178,6 +197,9 @@ class MinecraftLauncher(ctk.CTk):
         self._resize_job = None
 
         self.bind("<Configure>", self.on_resize)
+        
+        # Process log queue every 100ms
+        self.process_logs_queue()
 
         # Status bar
         self.status_bar = ctk.CTkFrame(self.main_frame, fg_color="transparent", height=25)
@@ -207,6 +229,18 @@ class MinecraftLauncher(ctk.CTk):
         if self._resize_job is not None:
             self.after_cancel(self._resize_job)
         self._resize_job = self.after(100, lambda: self.resize_bg(event.width, event.height))
+
+    def process_logs_queue(self):
+        """Process log messages from the queue (thread-safe)"""
+        try:
+            while True:
+                msg = self.log_queue.get_nowait()
+                self.logs_text.insert("end", msg)
+                self.logs_text.see("end")
+        except:
+            pass
+        # Schedule next check
+        self.after(100, self.process_logs_queue)
 
     def resize_bg(self, width, height):
         self.bg_image = CTkImage(light_image=self.pil_image, dark_image=self.pil_image, size=(width, height))
@@ -310,7 +344,7 @@ class MinecraftLauncher(ctk.CTk):
                 with open(json_path, "w") as file:
                     json.dump(json_data, file, indent=4)
 
-                self.logs_text.insert("end", f"{version}.json downloaded!\n")
+                self.log_queue.put(f"{version}.json downloaded!\n")
                 return json_data
 
         return None
@@ -351,7 +385,7 @@ class MinecraftLauncher(ctk.CTk):
                 os.remove(jar_path)
                 raise ValueError("Hash mismatch for downloaded JAR file.")
 
-            self.logs_text.insert("end", f"{version}.jar downloaded!\n")
+            self.log_queue.put(f"{version}.jar downloaded!\n")
 
         return jar_path, json_data
 
@@ -364,17 +398,20 @@ class MinecraftLauncher(ctk.CTk):
             raise ValueError("Untrusted URL detected: " + url)
         
         try:
-            response = requests.get(url, stream=True)
+            response = self.session.get(url, stream=True, timeout=30)
             response.raise_for_status()
             
             with open(file_path, "wb") as file:
                 for chunk in response.iter_content(chunk_size=65536):
-                    file.write(chunk)
+                    if chunk:
+                        file.write(chunk)
+            
+            response.close()
             
             if expected_hash and not self.verify_file_hash(file_path, expected_hash, hash_type):
                 os.remove(file_path)
                 raise ValueError(f"Hash mismatch for file: {file_path}")
-            self.logs_text.insert("end", f"Downloaded: {file_path}\n")
+            self.log_queue.put(f"Downloaded: {file_path}\n")
             return True
         except Exception as e:
             if os.path.exists(file_path):
@@ -408,7 +445,7 @@ class MinecraftLauncher(ctk.CTk):
 
         # Download files concurrently using ThreadPoolExecutor
         if download_tasks:
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 futures = [
                     executor.submit(self._download_file, url, file_path, expected_hash, hash_type)
                     for url, file_path, expected_hash, hash_type in download_tasks
@@ -418,6 +455,7 @@ class MinecraftLauncher(ctk.CTk):
                     try:
                         future.result()
                     except Exception as e:
+                        self.log_queue.put(f"Error downloading library: {str(e)}\n")
                         raise ValueError(f"Failed to download library: {str(e)}")
 
     def extract_native_library(self, native_path):
@@ -437,10 +475,11 @@ class MinecraftLauncher(ctk.CTk):
         # Download asset index if it doesn't exist
         if not os.path.exists(asset_index_path):
             os.makedirs(os.path.dirname(asset_index_path), exist_ok=True)
-            response = requests.get(asset_index["url"])
+            response = self.session.get(asset_index["url"], timeout=30)
             with open(asset_index_path, "wb") as file:
                 file.write(response.content)
-            self.logs_text.insert("end", f"Downloaded asset index: {asset_index_path}\n")
+            response.close()
+            self.log_queue.put(f"Downloaded asset index: {asset_index_path}\n")
 
         # Load asset index
         with open(asset_index_path, "r") as file:
@@ -456,7 +495,7 @@ class MinecraftLauncher(ctk.CTk):
             asset_dir_path = os.path.join(objects_dir, sub_dir)
             os.makedirs(asset_dir_path, exist_ok=True)
             asset_path = os.path.join(objects_dir, sub_dir, hash)
-            self.logs_text.insert("end", f"Preparing asset: {asset_name} at {asset_path}\n")
+            self.log_queue.put(f"Preparing asset: {asset_name} at {asset_path}\n")
 
             if not os.path.exists(asset_path):
                 url = f"https://resources.download.minecraft.net/{sub_dir}/{hash}"
@@ -464,7 +503,7 @@ class MinecraftLauncher(ctk.CTk):
 
         # Download assets concurrently using ThreadPoolExecutor
         if download_tasks:
-            with ThreadPoolExecutor(max_workers=8) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 futures = [
                     executor.submit(self._download_file, url, file_path, expected_hash, hash_type)
                     for url, file_path, expected_hash, hash_type in download_tasks
@@ -474,6 +513,7 @@ class MinecraftLauncher(ctk.CTk):
                     try:
                         future.result()
                     except Exception as e:
+                        self.log_queue.put(f"Error downloading asset: {str(e)}\n")
                         raise ValueError(f"Failed to download asset: {str(e)}")
 
     def launch_minecraft(self):
