@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import ssl
 import socket
 from hashlib import sha256
+from concurrent.futures import ThreadPoolExecutor
 
 # Get the directory of the current script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -354,28 +355,46 @@ class MinecraftLauncher(ctk.CTk):
 
         return jar_path, json_data
 
+    def _download_file(self, url, file_path, expected_hash=None, hash_type="sha256"):
+        """Helper method to download a single file with hash verification"""
+        if os.path.exists(file_path):
+            return True
+        
+        if not self.is_trusted_url(url, ["launchermeta.mojang.com", "resources.download.minecraft.net"]):
+            raise ValueError("Untrusted URL detected: " + url)
+        
+        try:
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
+            
+            with open(file_path, "wb") as file:
+                for chunk in response.iter_content(chunk_size=65536):
+                    file.write(chunk)
+            
+            if expected_hash and not self.verify_file_hash(file_path, expected_hash, hash_type):
+                os.remove(file_path)
+                raise ValueError(f"Hash mismatch for file: {file_path}")
+            self.logs_text.insert("end", f"Downloaded: {file_path}\n")
+            return True
+        except Exception as e:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise e
+
     def download_libraries(self, version_json):
-        """Download missing Minecraft libraries and native libraries"""
+        """Download missing Minecraft libraries and native libraries with multithreading"""
+        download_tasks = []
+        
         for lib in version_json["libraries"]:
             if "downloads" in lib:
                 if "artifact" in lib["downloads"]:
                     artifact = lib["downloads"]["artifact"]
                     url = artifact["url"]
-                    expected_hash = artifact.get("sha256")  # Use SHA-256 if available
+                    expected_hash = artifact.get("sha256")
                     lib_path = os.path.join(LIBRARIES_DIR, os.path.basename(url))
-
+                    
                     if not os.path.exists(lib_path):
-                        if not self.is_trusted_url(url, ["launchermeta.mojang.com", "resources.download.minecraft.net"]):
-                            raise ValueError("Untrusted URL detected: " + url)
-
-                        response = requests.get(url, stream=True)
-                        with open(lib_path, "wb") as file:
-                            for chunk in response.iter_content(chunk_size=65536):
-                                file.write(chunk)
-
-                        if expected_hash and not self.verify_file_hash(lib_path, expected_hash):
-                            os.remove(lib_path)
-                            raise ValueError(f"Hash mismatch for library: {lib_path}")
+                        download_tasks.append((url, lib_path, expected_hash, "sha256"))
 
                 if "classifiers" in lib["downloads"]:
                     for classifier, classifier_info in lib["downloads"]["classifiers"].items():
@@ -383,19 +402,23 @@ class MinecraftLauncher(ctk.CTk):
                             url = classifier_info["url"]
                             expected_hash = classifier_info.get("sha256")
                             native_path = os.path.join(NATIVES_DIR, os.path.basename(url))
-
+                            
                             if not os.path.exists(native_path):
-                                if not self.is_trusted_url(url, ["launchermeta.mojang.com", "resources.download.minecraft.net"]):
-                                    raise ValueError("Untrusted URL detected: " + url)
+                                download_tasks.append((url, native_path, expected_hash, "sha256"))
 
-                                response = requests.get(url, stream=True)
-                                with open(native_path, "wb") as file:
-                                    for chunk in response.iter_content(chunk_size=65536):
-                                        file.write(chunk)
-
-                            if expected_hash and not self.verify_file_hash(native_path, expected_hash):
-                                os.remove(native_path)
-                                raise ValueError(f"Hash mismatch for native: {native_path}")
+        # Download files concurrently using ThreadPoolExecutor
+        if download_tasks:
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = [
+                    executor.submit(self._download_file, url, file_path, expected_hash, hash_type)
+                    for url, file_path, expected_hash, hash_type in download_tasks
+                ]
+                
+                for future in futures:
+                    try:
+                        future.result()
+                    except Exception as e:
+                        raise ValueError(f"Failed to download library: {str(e)}")
 
     def extract_native_library(self, native_path):
         """Extract native libraries safely."""
@@ -407,6 +430,7 @@ class MinecraftLauncher(ctk.CTk):
                 zip_ref.extract(member, NATIVES_DIR)
 
     def download_assets(self, version_json):
+        """Download missing assets with multithreading"""
         asset_index = version_json["assetIndex"]
         asset_index_path = os.path.join(ASSETS_DIR, "indexes", f"{asset_index['id']}.json")
 
@@ -423,25 +447,34 @@ class MinecraftLauncher(ctk.CTk):
             asset_index_data = json.load(file)
 
         objects_dir = os.path.join(ASSETS_DIR, "objects")
-
-        # Download missing assets
+        
+        # Prepare download tasks for assets
+        download_tasks = []
         for asset_name, asset_info in asset_index_data["objects"].items():
             hash = asset_info["hash"]
             sub_dir = hash[:2]
-            asset_dir_path = os.path.join(objects_dir, sub_dir) 
-            os.makedirs(asset_dir_path, exist_ok=True) 
+            asset_dir_path = os.path.join(objects_dir, sub_dir)
+            os.makedirs(asset_dir_path, exist_ok=True)
             asset_path = os.path.join(objects_dir, sub_dir, hash)
+            self.logs_text.insert("end", f"Preparing asset: {asset_name} at {asset_path}\n")
 
             if not os.path.exists(asset_path):
-                response = requests.get(f"https://resources.download.minecraft.net/{sub_dir}/{hash}", stream=True)
-                print("Writing asset:", asset_path)
-                with open(asset_path, "wb") as file:
-                    for chunk in response.iter_content(chunk_size=65536):
-                        file.write(chunk)
+                url = f"https://resources.download.minecraft.net/{sub_dir}/{hash}"
+                download_tasks.append((url, asset_path, hash, "sha1"))
 
-                if not self.verify_file_hash(asset_path, hash, "sha1"):  # Mojang provides SHA-1 for assets
-                    os.remove(asset_path)
-                    raise ValueError(f"Hash mismatch for asset: {asset_name}")
+        # Download assets concurrently using ThreadPoolExecutor
+        if download_tasks:
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [
+                    executor.submit(self._download_file, url, file_path, expected_hash, hash_type)
+                    for url, file_path, expected_hash, hash_type in download_tasks
+                ]
+                
+                for future in futures:
+                    try:
+                        future.result()
+                    except Exception as e:
+                        raise ValueError(f"Failed to download asset: {str(e)}")
 
     def launch_minecraft(self):
         selected_installation = self.installations_listbox.get("active")
