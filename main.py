@@ -51,7 +51,7 @@ class MinecraftLauncher(ctk.CTk):
 
         # Main container
         self.main_frame = ctk.CTkFrame(self, fg_color=("white", "#2b2b2b"))
-        self.main_frame.pack(fill="both", expand=True, padx=100, pady=100)
+        self.main_frame.pack(fill="both", expand=True, padx=70, pady=70)
 
         self.pil_image = Image.open("clbg.jpg")
 
@@ -190,6 +190,18 @@ class MinecraftLauncher(ctk.CTk):
         )
         self.status_label.pack(side="left")
 
+        # Dark/Light mode toggle
+        self.theme_toggle = ctk.CTkButton(
+            self.status_bar,
+            text="☀️ Light",
+            width=80,
+            height=25,
+            font=("Segoe UI", 10),
+            command=self.toggle_theme
+        )
+        self.theme_toggle.pack(side="right", padx=(10, 0))
+        self.current_theme = "dark"
+
     def on_resize(self, event):
         if self._resize_job is not None:
             self.after_cancel(self._resize_job)
@@ -198,6 +210,17 @@ class MinecraftLauncher(ctk.CTk):
     def resize_bg(self, width, height):
         self.bg_image = CTkImage(light_image=self.pil_image, dark_image=self.pil_image, size=(width, height))
         self.bg_label.configure(image=self.bg_image)
+
+    def toggle_theme(self):
+        """Toggle between dark and light theme"""
+        if self.current_theme == "dark":
+            ctk.set_appearance_mode("light")
+            self.theme_toggle.configure(text="🌙 Dark")
+            self.current_theme = "light"
+        else:
+            ctk.set_appearance_mode("dark")
+            self.theme_toggle.configure(text="☀️ Light")
+            self.current_theme = "dark"
 
     def is_trusted_url(self, url, trusted_domains):
         """Check if the URL belongs to a trusted domain."""
