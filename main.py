@@ -202,7 +202,7 @@ class MinecraftLauncher(ctk.CTk):
     def fetch_latest_version(self):
         """Fetch the latest Minecraft release version"""
         url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
-        trusted_domains = ["launchermeta.mojang.com"]
+        trusted_domains = ["launchermeta.mojang.com", "piston-meta.mojang.com"]
         hostname = 'launchermeta.mojang.com'
         port = 443
 
