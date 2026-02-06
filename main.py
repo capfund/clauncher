@@ -24,6 +24,13 @@ LIBRARIES_DIR = os.path.join(MINECRAFT_DIR, "libraries")
 NATIVES_DIR = os.path.join(MINECRAFT_DIR, "natives")
 ASSETS_DIR = os.path.join(MINECRAFT_DIR, "assets")
 
+trusted_domains = [
+    "launchermeta.mojang.com",
+    "resources.download.minecraft.net",
+    "piston-meta.mojang.com",
+    "piston-data.mojang.com"
+]
+
 os.makedirs(VERSIONS_DIR, exist_ok=True)
 os.makedirs(LIBRARIES_DIR, exist_ok=True)
 os.makedirs(NATIVES_DIR, exist_ok=True)
@@ -182,6 +189,9 @@ class MinecraftLauncher(ctk.CTk):
     def is_trusted_url(self, url, trusted_domains):
         """Check if the URL belongs to a trusted domain."""
         parsed_url = urlparse(url)
+        if parsed_url.netloc not in trusted_domains:
+            if parsed_url.netloc.endswith("mojang.com") or parsed_url.netloc.endswith("minecraft.net"):
+                return True
         return parsed_url.netloc in trusted_domains
 
     def verify_tls_certificate(self, url, expected_fingerprint):
@@ -202,7 +212,6 @@ class MinecraftLauncher(ctk.CTk):
     def fetch_latest_version(self):
         """Fetch the latest Minecraft release version"""
         url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
-        trusted_domains = ["launchermeta.mojang.com", "piston-meta.mojang.com"]
         hostname = 'launchermeta.mojang.com'
         port = 443
 
@@ -231,7 +240,6 @@ class MinecraftLauncher(ctk.CTk):
     def get_all_versions(self):
         """Fetch all Minecraft versions"""
         url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
-        trusted_domains = ["launchermeta.mojang.com"]
 
         if not self.is_trusted_url(url, trusted_domains):
             raise ValueError("Untrusted URL detected: " + url)
@@ -242,7 +250,6 @@ class MinecraftLauncher(ctk.CTk):
     def download_version_json(self, version):
         """Download the version JSON file"""
         url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
-        trusted_domains = ["launchermeta.mojang.com"]
 
         if not self.is_trusted_url(url, trusted_domains):
             raise ValueError("Untrusted URL detected: " + url)
@@ -287,8 +294,6 @@ class MinecraftLauncher(ctk.CTk):
         expected_hash = json_data["downloads"]["client"]["sha1"]  # Assuming SHA-1 is provided
         jar_path = os.path.join(VERSIONS_DIR, version, f"{version}.jar")
 
-        trusted_domains = ["launchermeta.mojang.com", "resources.download.minecraft.net"]
-
         if not self.is_trusted_url(jar_url, trusted_domains):
             raise ValueError("Untrusted URL detected: " + jar_url)
 
@@ -305,7 +310,7 @@ class MinecraftLauncher(ctk.CTk):
                         raise ValueError("File exceeds maximum allowed size.")
                     file.write(chunk)
             
-            if not self.verify_file_hash(jar_path, expected_hash):
+            if not self.verify_file_hash(jar_path, expected_hash, "sha1"):
                 os.remove(jar_path)
                 raise ValueError("Hash mismatch for downloaded JAR file.")
 
@@ -387,10 +392,13 @@ class MinecraftLauncher(ctk.CTk):
         for asset_name, asset_info in asset_index_data["objects"].items():
             hash = asset_info["hash"]
             sub_dir = hash[:2]
+            asset_dir_path = os.path.join(objects_dir, sub_dir) 
+            os.makedirs(asset_dir_path, exist_ok=True) 
             asset_path = os.path.join(objects_dir, sub_dir, hash)
 
             if not os.path.exists(asset_path):
                 response = requests.get(f"https://resources.download.minecraft.net/{sub_dir}/{hash}", stream=True)
+                print("Writing asset:", asset_path)
                 with open(asset_path, "wb") as file:
                     for chunk in response.iter_content(chunk_size=8192):
                         file.write(chunk)
