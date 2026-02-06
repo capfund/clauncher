@@ -51,7 +51,7 @@ class MinecraftLauncher(ctk.CTk):
 
         # Main container
         self.main_frame = ctk.CTkFrame(self, fg_color=("white", "#2b2b2b"))
-        self.main_frame.pack(fill="both", expand=True, padx=40, pady=40)
+        self.main_frame.pack(fill="both", expand=True, padx=100, pady=100)
 
         self.pil_image = Image.open("clbg.jpg")
 
