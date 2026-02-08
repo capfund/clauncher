@@ -10,7 +10,7 @@ from queue import Queue
 import threading
 
 class MinecraftLauncher(ctk.CTk):
-    def __init__(self):
+    def __init__(self, assets_path):
         super().__init__()
         
         # Queue for thread-safe log messages
@@ -20,6 +20,8 @@ class MinecraftLauncher(ctk.CTk):
         self.core = MinecraftCore(self.log_queue)
         self.core.core_make_dirs()
         self.latest_release = self.core.fetch_latest_version()
+
+        self.iconbitmap(os.path.join(assets_path, "clauncher-logo.ico"))
         
         self.title("CLauncher")
         self.geometry("550x550")
@@ -34,7 +36,7 @@ class MinecraftLauncher(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, fg_color=("white", "#2b2b2b"))
         self.main_frame.pack(fill="both", expand=True, padx=70, pady=70)
 
-        self.pil_image = Image.open("clbg.jpg")
+        self.pil_image = Image.open(os.path.join(assets_path, "clbg.jpg"))
 
         # Create CTkImage (enable scaling)
         self.bg_image = CTkImage(light_image=self.pil_image, dark_image=self.pil_image, size=(self.winfo_width(), self.winfo_height()))
@@ -286,9 +288,9 @@ class MinecraftLauncher(ctk.CTk):
             if profile and "version" in profile:
                 self.version_combobox.set(profile["version"])
                 if profile["version"] == self.latest_release:
-                    self.icon_image = ImageTk.PhotoImage(Image.open("grassblock.jpg").resize((24, 24)))
+                    self.icon_image = ImageTk.PhotoImage(Image.open(os.path.join(self.assets_path, "grassblock.jpg")).resize((24, 24)))
                 else:
-                    self.icon_image = ImageTk.PhotoImage(Image.open("furnace.jpeg").resize((24, 24)))
+                    self.icon_image = ImageTk.PhotoImage(Image.open(os.path.join(self.assets_path, "furnace.jpeg")).resize((24, 24)))
 
     def add_installation(self):
         profile_name = simpledialog.askstring("Profile Name", "Enter profile name:")
@@ -306,8 +308,3 @@ class MinecraftLauncher(ctk.CTk):
             profile_name = selected_profile.split(" (")[0]
             delete_profile(profile_name)
             self.load_installations()
-
-
-if __name__ == "__main__":
-    app = MinecraftLauncher()
-    app.mainloop()
