@@ -5,7 +5,7 @@
 </p>
 
 A lightweight open-source Minecraft launcher written in Python using CustomTkinter
-Supports multiple installations, profiles, version selection, and automatic downloading of game files, libraries, natives, and assets.
+Supports multiple installations, profiles, version selection, and automatic downloading of game files, libraries, natives, and assets!
 
 ---
 
