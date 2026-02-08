@@ -5,7 +5,7 @@ from PIL import Image, ImageTk
 import os
 import json
 from backend.profiles import load_profiles, save_profile, delete_profile
-from backend.core import MinecraftCore, VERSIONS_DIR, MINECRAFT_DIR, NATIVES_DIR, ASSETS_DIR, LIBRARIES_DIR
+from backend.core import MinecraftCore
 from queue import Queue
 import threading
 
@@ -168,7 +168,7 @@ class MinecraftLauncher(ctk.CTk):
 
         self.status_label = ctk.CTkLabel(
             self.status_bar, 
-            text="Ready", 
+            text="Made with ❤️ by CLauncher Team", 
             font=("Segoe UI", 10),
             text_color="gray"
         )
@@ -236,26 +236,30 @@ class MinecraftLauncher(ctk.CTk):
             self.play_button.configure(state="normal")
             return
 
+        # Create core with profile-specific directories
+        core = MinecraftCore(self.log_queue, profile_name)
+        core.core_make_dirs()
+
         version = profile.get("version")
         if not version:
             self.logs_text.insert("end", "Version not found for the selected installation, fallback is latest version.\n")
-            version = self.core.fetch_latest_version()
+            version = core.fetch_latest_version()
 
-        json_path = os.path.join(VERSIONS_DIR, version, f"{version}.json")
-        jar_path = os.path.join(VERSIONS_DIR, version, f"{version}.jar")
+        json_path = os.path.join(core.versions_dir, version, f"{version}.json")
+        jar_path = os.path.join(core.versions_dir, version, f"{version}.jar")
 
         if not os.path.exists(json_path) or not os.path.exists(jar_path):
             self.logs_text.insert("end", f"Downloading Minecraft {version} files...\n")
-            jar_path, version_json = self.core.download_minecraft_jar(version)
+            jar_path, version_json = core.download_minecraft_jar(version)
         else:
             with open(json_path, "r") as file:
                 version_json = json.load(file)
 
-        self.core.download_libraries(version_json)
-        self.core.download_assets(version_json)
+        core.download_libraries(version_json)
+        core.download_assets(version_json)
 
         username = self.username_entry.get()
-        process = self.core.launch_minecraft(version, username, json_path, jar_path, version_json)
+        process = core.launch_minecraft(version, username, json_path, jar_path, version_json)
 
         for line in process.stdout:
             self.logs_text.insert("end", line)

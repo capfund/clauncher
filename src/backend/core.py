@@ -18,12 +18,6 @@ from .profiles import load_profiles, save_profile, delete_profile
 # Get the directory of the current script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-MINECRAFT_DIR = os.path.join(SCRIPT_DIR, "clauncher")
-VERSIONS_DIR = os.path.join(MINECRAFT_DIR, "versions")
-LIBRARIES_DIR = os.path.join(MINECRAFT_DIR, "libraries")
-NATIVES_DIR = os.path.join(MINECRAFT_DIR, "natives")
-ASSETS_DIR = os.path.join(MINECRAFT_DIR, "assets")
-
 trusted_domains = [
     "launchermeta.mojang.com",
     "resources.download.minecraft.net",
@@ -32,9 +26,18 @@ trusted_domains = [
 ]
 
 class MinecraftCore:
-    def __init__(self, log_queue):
+    def __init__(self, log_queue, profile_name="Latest Release"):
         # Create a requests session with connection pooling and retries
         self.session = requests.Session()
+        
+        # Set up profile-specific directories
+        self.profile_name = profile_name
+        minecraft_dir = os.path.join(SCRIPT_DIR, "clauncher", profile_name)
+        self.minecraft_dir = minecraft_dir
+        self.versions_dir = os.path.join(minecraft_dir, "versions")
+        self.libraries_dir = os.path.join(minecraft_dir, "libraries")
+        self.natives_dir = os.path.join(minecraft_dir, "natives")
+        self.assets_dir = os.path.join(minecraft_dir, "assets")
         retry_strategy = Retry(
             total=3,
             backoff_factor=1,
@@ -49,10 +52,10 @@ class MinecraftCore:
         self.log_queue = log_queue
 
     def core_make_dirs(self):
-        os.makedirs(VERSIONS_DIR, exist_ok=True)
-        os.makedirs(LIBRARIES_DIR, exist_ok=True)
-        os.makedirs(NATIVES_DIR, exist_ok=True)
-        os.makedirs(ASSETS_DIR, exist_ok=True)
+        os.makedirs(self.versions_dir, exist_ok=True)
+        os.makedirs(self.libraries_dir, exist_ok=True)
+        os.makedirs(self.natives_dir, exist_ok=True)
+        os.makedirs(self.assets_dir, exist_ok=True)
 
     def is_trusted_url(self, url, trusted_domains):
         """Check if the URL belongs to a trusted domain."""
@@ -61,19 +64,6 @@ class MinecraftCore:
             if parsed_url.netloc.endswith(".mojang.com") or parsed_url.netloc.endswith(".minecraft.net"):
                 return True
         return parsed_url.netloc in trusted_domains
-
-    """def verify_tls_certificate(self, url, expected_fingerprint):
-        parsed_url = urlparse(url)
-        hostname = parsed_url.netloc
-
-        context = ssl.create_default_context()
-        with socket.create_connection((hostname, 443)) as sock:
-            with context.wrap_socket(sock, server_hostname=hostname) as ssock:
-                der_cert = ssock.getpeercert(binary_form=True)
-                actual_fingerprint = sha256(der_cert).hexdigest()
-
-                if actual_fingerprint.lower() != expected_fingerprint.lower():
-                    raise ssl.SSLError("TLS certificate fingerprint mismatch!")"""
 
     def fetch_latest_version(self):
         """Fetch the latest Minecraft release version"""
@@ -118,7 +108,7 @@ class MinecraftCore:
 
                 json_data = requests.get(version_json_url).json()
 
-                version_folder = os.path.join(VERSIONS_DIR, version)
+                version_folder = os.path.join(self.versions_dir, version)
                 os.makedirs(version_folder, exist_ok=True)
 
                 json_path = os.path.join(version_folder, f"{version}.json")
@@ -145,7 +135,7 @@ class MinecraftCore:
 
         jar_url = json_data["downloads"]["client"]["url"]
         expected_hash = json_data["downloads"]["client"]["sha1"]
-        jar_path = os.path.join(VERSIONS_DIR, version, f"{version}.jar")
+        jar_path = os.path.join(self.versions_dir, version, f"{version}.jar")
 
         if not self.is_trusted_url(jar_url, trusted_domains):
             raise ValueError("Untrusted URL detected: " + jar_url)
@@ -180,7 +170,8 @@ class MinecraftCore:
             raise ValueError("Untrusted URL detected: " + url)
         
         try:
-            response = self.session.get(url, stream=True, timeout=30)
+            #response = self.session.get(url, stream=True, timeout=30)
+            response = self.session.get(url, stream=True, timeout=(10,120))
             response.raise_for_status()
             
             with open(file_path, "wb") as file:
@@ -210,7 +201,7 @@ class MinecraftCore:
                     artifact = lib["downloads"]["artifact"]
                     url = artifact["url"]
                     expected_hash = artifact.get("sha256")
-                    lib_path = os.path.join(LIBRARIES_DIR, os.path.basename(url))
+                    lib_path = os.path.join(self.libraries_dir, os.path.basename(url))
                     
                     if not os.path.exists(lib_path):
                         download_tasks.append((url, lib_path, expected_hash, "sha256"))
@@ -220,7 +211,7 @@ class MinecraftCore:
                         if "natives-windows" in classifier:
                             url = classifier_info["url"]
                             expected_hash = classifier_info.get("sha256")
-                            native_path = os.path.join(NATIVES_DIR, os.path.basename(url))
+                            native_path = os.path.join(self.natives_dir, os.path.basename(url))
                             
                             if not os.path.exists(native_path):
                                 download_tasks.append((url, native_path, expected_hash, "sha256"))
@@ -244,15 +235,15 @@ class MinecraftCore:
         """Extract native libraries safely."""
         with zipfile.ZipFile(native_path, 'r') as zip_ref:
             for member in zip_ref.namelist():
-                member_path = os.path.abspath(os.path.join(NATIVES_DIR, member))
-                if not member_path.startswith(NATIVES_DIR):
+                member_path = os.path.abspath(os.path.join(self.natives_dir, member))
+                if not member_path.startswith(self.natives_dir):
                     raise ValueError("Unsafe path detected in ZIP file.")
-                zip_ref.extract(member, NATIVES_DIR)
+                zip_ref.extract(member, self.natives_dir)
 
     def download_assets(self, version_json):
         """Download missing assets with multithreading"""
         asset_index = version_json["assetIndex"]
-        asset_index_path = os.path.join(ASSETS_DIR, "indexes", f"{asset_index['id']}.json")
+        asset_index_path = os.path.join(self.assets_dir, "indexes", f"{asset_index['id']}.json")
 
         # Download asset index if it doesn't exist
         if not os.path.exists(asset_index_path):
@@ -267,7 +258,7 @@ class MinecraftCore:
         with open(asset_index_path, "r") as file:
             asset_index_data = json.load(file)
 
-        objects_dir = os.path.join(ASSETS_DIR, "objects")
+        objects_dir = os.path.join(self.assets_dir, "objects")
         
         # Prepare download tasks for assets
         download_tasks = []
@@ -300,20 +291,20 @@ class MinecraftCore:
 
     def launch_minecraft(self, version, username, json_path, jar_path, version_json):
         """Launch Minecraft with the given parameters"""
-        custom_game_dir = MINECRAFT_DIR
-        native_lib_path = NATIVES_DIR
+        custom_game_dir = self.minecraft_dir
+        native_lib_path = self.natives_dir
 
         java_command = [
             "java",
             "-Xmx2G",  
             "-Xms1G",  
             f"-Djava.library.path={native_lib_path}",
-            "-cp", f"{LIBRARIES_DIR}/*;{jar_path}",
+            "-cp", f"{self.libraries_dir}/*;{jar_path}",
             version_json["mainClass"],
             "--username", username,  
             "--version", version,
             "--gameDir", custom_game_dir,  
-            "--assetsDir", ASSETS_DIR,
+            "--assetsDir", self.assets_dir,
             "--assetIndex", version_json["assetIndex"]["id"],
             "--accessToken", "null",  
             "--uuid", "00000000-0000-0000-0000-000000000000",  
