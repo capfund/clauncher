@@ -62,8 +62,7 @@ class MinecraftCore:
                 return True
         return parsed_url.netloc in trusted_domains
 
-    def verify_tls_certificate(self, url, expected_fingerprint):
-        """Verify the TLS certificate fingerprint of the server."""
+    """def verify_tls_certificate(self, url, expected_fingerprint):
         parsed_url = urlparse(url)
         hostname = parsed_url.netloc
 
@@ -74,30 +73,18 @@ class MinecraftCore:
                 actual_fingerprint = sha256(der_cert).hexdigest()
 
                 if actual_fingerprint.lower() != expected_fingerprint.lower():
-                    raise ssl.SSLError("TLS certificate fingerprint mismatch!")
+                    raise ssl.SSLError("TLS certificate fingerprint mismatch!")"""
 
     def fetch_latest_version(self):
         """Fetch the latest Minecraft release version"""
         url = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
-        hostname = 'launchermeta.mojang.com'
-        port = 443
-
-        # Connect and get the certificate
-        context = ssl.create_default_context()
-        with socket.create_connection((hostname, port)) as sock:
-            with context.wrap_socket(sock, server_hostname=hostname) as ssock:
-                der_cert = ssock.getpeercert(binary_form=True)
-
-        # Calculate SHA-256 fingerprint
-        fingerprint = hashlib.sha256(der_cert).hexdigest()
-        formatted_fingerprint = ''.join(fingerprint[i:i+2].upper() for i in range(0, len(fingerprint), 2))
 
         if not self.is_trusted_url(url, trusted_domains):
             raise ValueError("Untrusted URL detected: " + url)
 
-        self.verify_tls_certificate(url, formatted_fingerprint)
+        #self.verify_tls_certificate(url, formatted_fingerprint)
 
-        response = requests.get(url).json()
+        response = requests.get(url, verify=True).json()
         for version in response["versions"]:
             if version["type"] == "release":
                 return version["id"]
