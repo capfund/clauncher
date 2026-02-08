@@ -10,7 +10,7 @@ os.makedirs(PROFILES_DIR, exist_ok=True)
 
 DEFAULT_PROFILE = {
     "name": "Latest Release",
-    "version": "1.21.4",
+    "version": "1.21.11",
     "type": "release",
     "icon": "grass_block"
 }
