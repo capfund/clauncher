@@ -186,7 +186,8 @@ class MinecraftLauncher(ctk.CTk):
             command=self.toggle_theme
         )
         self.theme_toggle.pack(side="right", padx=(10, 0))
-        self.current_theme = "dark"
+        self.current_theme = "dark" 
+        self.assets_path = assets_path
 
     def on_resize(self, event):
         if self._resize_job is not None:
@@ -227,7 +228,7 @@ class MinecraftLauncher(ctk.CTk):
             return
 
         self.play_button.configure(state="disabled")
-        threading.Thread(target=self._launch_minecraft).start()
+        threading.Thread(target=self._launch_minecraft, daemon=True).start()
 
     def _launch_minecraft(self):
         selected_installation = self.installations_listbox.get("active")

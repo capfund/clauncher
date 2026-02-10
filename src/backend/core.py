@@ -81,7 +81,7 @@ class MinecraftCore:
         for version in response["versions"]:
             if version["type"] == "release":
                 return version["id"]
-        return "1.21.4"  
+        return "1.21.11"  
 
     def get_all_versions(self):
         """Fetch all Minecraft versions"""
@@ -217,6 +217,7 @@ class MinecraftCore:
                             native_path = os.path.join(self.natives_dir, os.path.basename(url))
                             
                             if not os.path.exists(native_path):
+                                print("Natives download task entry")
                                 download_tasks.append((url, native_path, expected_hash, "sha256"))
 
         # Download files concurrently using ThreadPoolExecutor
@@ -233,6 +234,12 @@ class MinecraftCore:
                     except Exception as e:
                         self.log_queue.put(f"Error downloading library: {str(e)}\n")
                         raise ValueError(f"Failed to download library: {str(e)}")
+                    
+        for url, file_path, expected_hash, hash_type in download_tasks:
+            if file_path.endswith(".zip") and "natives" in file_path:
+                print("Extracting native library:", file_path)
+                self.log_queue.put(f"Extracting native library: {file_path}\n")
+                self.extract_native_library(file_path)
 
     def extract_native_library(self, native_path):
         """Extract native libraries safely."""
@@ -316,3 +323,4 @@ class MinecraftCore:
 
         process = subprocess.Popen(java_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         return process
+    

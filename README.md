@@ -34,3 +34,7 @@ CLauncher and its core components are licensed under the
 <a href="https://opensource.org/licenses/MIT">**MIT License**.</a>
 
 The full text of the license can be accessed via [this link](https://opensource.org/licenses/MIT) and is also included in the [license](LICENSE) file of this software package.
+
+---
+
+_Not affiliated nor endorsed by Mojang/Microsoft_
